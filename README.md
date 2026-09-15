@@ -113,10 +113,10 @@ PAMAP2 is mixed: TCN-SCMVC has the best ACC, but the flattened original SCMVC ba
 ## Result Files
 
 ```text
-p2_results/controlled_summary.csv
-p2_results/controlled_runs.csv
-p2_results/controlled_runs_seeds_0_1_2.csv
-p2_results/smoke.csv
+p1_results/controlled_summary.csv
+p1_results/controlled_runs.csv
+p1_results/controlled_runs_seeds_0_1_2.csv
+p1_results/smoke.csv
 ```
 
 ## Notes
