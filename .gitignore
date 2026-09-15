@@ -1,0 +1,27 @@
+# Python/cache files
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# macOS/editor files
+.DS_Store
+.vscode/
+
+# Local datasets: do not upload large UCI/raw data to GitHub
+HAR_dataset/
+data/
+
+# Training outputs and model checkpoints
+models/
+temporal_scmvc/models/
+outputs/
+*.pth
+*.pt
+*.ckpt
+
+# Local archives and generated submission folders
+*.zip
+Fahad_Ali_P1_Final_Submission*/
+
+# Optional local report artifacts
+*.pages

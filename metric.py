@@ -1,84 +1,113 @@
-from sklearn.metrics import v_measure_score, adjusted_rand_score, accuracy_score
-from sklearn.cluster import KMeans
-from scipy.optimize import linear_sum_assignment
-from torch.utils.data import DataLoader
 import numpy as np
 import torch
+from sklearn.cluster import KMeans
+from sklearn import metrics
 
-def cluster_acc(y_true, y_pred):
+
+def safe_normalize(x):
+    """Normalize safely to prevent NaN/Inf and exploding values."""
+    x = np.nan_to_num(x, nan=0.0, posinf=1e3, neginf=-1e3)
+    x = np.clip(x, -1e3, 1e3)
+
+    norm = np.linalg.norm(x, axis=1, keepdims=True)
+    norm = np.where(norm < 1e-8, 1e-8, norm)
+
+    return x / norm
+
+
+def clustering_metrics(y_true, y_pred):
+    acc = clustering_accuracy(y_true, y_pred)
+    nmi = metrics.normalized_mutual_info_score(y_true, y_pred)
+    ari = metrics.adjusted_rand_score(y_true, y_pred)
+    pur = purity_score(y_true, y_pred)
+    return acc, nmi, ari, pur
+
+
+def clustering_accuracy(y_true, y_pred):
+    from scipy.optimize import linear_sum_assignment
+
     y_true = y_true.astype(np.int64)
-    assert y_pred.size == y_true.size
+    y_pred = y_pred.astype(np.int64)
+
     D = max(y_pred.max(), y_true.max()) + 1
     w = np.zeros((D, D), dtype=np.int64)
+
     for i in range(y_pred.size):
         w[y_pred[i], y_true[i]] += 1
-    u = linear_sum_assignment(w.max() - w)
-    ind = np.concatenate([u[0].reshape(u[0].shape[0], 1), u[1].reshape([u[0].shape[0], 1])], axis=1)
-    return sum([w[i, j] for i, j in ind]) * 1.0 / y_pred.size
 
-def purity(y_true, y_pred):
-    y_voted_labels = np.zeros(y_true.shape)
-    labels = np.unique(y_true)
-    ordered_labels = np.arange(labels.shape[0])
-    for k in range(labels.shape[0]):
-        y_true[y_true == labels[k]] = ordered_labels[k]
-    labels = np.unique(y_true)
-    bins = np.concatenate((labels, [np.max(labels)+1]), axis=0)
+    ind = linear_sum_assignment(w.max() - w)
+    return sum(w[i, j] for i, j in zip(ind[0], ind[1])) * 1.0 / y_pred.size
 
-    for cluster in np.unique(y_pred):
-        hist, _ = np.histogram(y_true[y_pred == cluster], bins=bins)
-        winner = np.argmax(hist)
-        y_voted_labels[y_pred == cluster] = winner
 
-    return accuracy_score(y_true, y_voted_labels)
+def purity_score(y_true, y_pred):
+    contingency_matrix = metrics.cluster.contingency_matrix(y_true, y_pred)
+    return np.sum(np.amax(contingency_matrix, axis=0)) / np.sum(contingency_matrix)
 
-def evaluate(label, pred):
-    nmi = v_measure_score(label, pred)
-    ari = adjusted_rand_score(label, pred)
-    acc = cluster_acc(label, pred)
-    pur = purity(label, pred)
-    return nmi, ari, acc, pur
 
-def valid(model, device, dataset, view, data_size, class_num, eval_h=False, epoch=None):
-    test_loader = DataLoader(
-            dataset,
-            batch_size=data_size,
-            shuffle=False,
-        )
-    for batch_idx, (xs, y, _) in enumerate(test_loader):
+def valid(model, device, dataset, view, data_size, class_num, eval_h=True, epoch=0):
+    model.eval()
+
+    Xs = [[] for _ in range(view)]
+    Ys = []
+
+    for xs, y, _ in dataset:
         for v in range(view):
-            xs[v] = xs[v].to(device)
-    labels = y.cpu().detach().data.numpy().squeeze()
+            x_v = xs[v].cpu().numpy() if torch.is_tensor(xs[v]) else np.asarray(xs[v])
+            Xs[v].append(x_v)
 
-    # inference
+        if torch.is_tensor(y):
+            Ys.append(int(y.item()))
+        else:
+            Ys.append(int(y))
+
+    Xs = [np.array(x, dtype=np.float32) for x in Xs]
+    Y = np.array(Ys, dtype=np.int64)
+
+    Xs_tensor = [torch.tensor(x, dtype=torch.float32, device=device) for x in Xs]
+
     with torch.no_grad():
-        xrs, zs, rs, H = model(xs)
+        _, zs, rs, H = model(Xs_tensor)
 
     if eval_h:
-        print("Clustering results on low-level features of each view:")
-        for v in range(view):
-            kmeans = KMeans(n_clusters=class_num, n_init=100)
-            y_pred = kmeans.fit_predict(zs[v].cpu().data.numpy())
-            nmi, ari, acc, pur = evaluate(labels, y_pred)
-            print('ACC{} = {:.4f} NMI{} = {:.4f} ARI{} = {:.4f} PUR{}={:.4f}'.format(v + 1, acc,
-                                                                                     v + 1, nmi,
-                                                                                     v + 1, ari,
-                                                                                     v + 1, pur))
-        print("Clustering results on view-consensus features of each view:")
-        for v in range(view):
-            y_pred = kmeans.fit_predict(rs[v].cpu().data.numpy())
-            nmi, ari, acc, pur = evaluate(labels, y_pred)
-            print('ACC{} = {:.4f} NMI{} = {:.4f} ARI{} = {:.4f} PUR{}={:.4f}'.format(v + 1, acc,
-                                                                                     v + 1, nmi,
-                                                                                     v + 1, ari,
-                                                                                     v + 1, pur))
-
-    # Clustering results on global features
-    kmeans = KMeans(n_clusters=class_num, n_init=100)
-    y_pred = kmeans.fit_predict(H.cpu().data.numpy())
-    nmi, ari, acc, pur = evaluate(labels, y_pred)
-    if epoch is not None:
-        print('Epoch {}'.format(epoch),'The clustering performace: ACC = {:.4f} NMI = {:.4f} ARI = {:.4f} PUR={:.4f}'.format(acc, nmi, ari, pur))
+        features = H.detach().cpu().numpy()
     else:
-        print('The clustering performace: ACC = {:.4f} NMI = {:.4f} ARI = {:.4f} PUR={:.4f}'.format(acc, nmi, ari, pur))
-    return acc, nmi, pur
+        features = torch.cat(rs, dim=1).detach().cpu().numpy()
+
+    features = np.asarray(features, dtype=np.float32)
+    features = np.nan_to_num(features, nan=0.0, posinf=1e3, neginf=-1e3)
+    features = np.clip(features, -1e3, 1e3)
+    features = safe_normalize(features)
+
+    if not np.isfinite(features).all():
+        print(f"Non-finite values detected in features at epoch {epoch}, skipping evaluation")
+        return 0, 0, 0
+
+    if np.isnan(features).any():
+        print(f"NaN detected in features at epoch {epoch}, skipping evaluation")
+        return 0, 0, 0
+
+    feature_std = np.std(features)
+    if feature_std < 1e-8:
+        print(f"Collapsed features at epoch {epoch}, skipping evaluation")
+        return 0, 0, 0
+
+    try:
+        kmeans = KMeans(
+            n_clusters=class_num,
+            n_init=10,
+            random_state=42
+        )
+        y_pred = kmeans.fit_predict(features)
+
+        acc, nmi, ari, pur = clustering_metrics(Y, y_pred)
+
+        print(
+            f"Epoch {epoch} The clustering performace: "
+            f"ACC = {acc:.4f} NMI = {nmi:.4f} ARI = {ari:.4f} PUR={pur:.4f}"
+        )
+
+        return acc, nmi, pur
+
+    except Exception as e:
+        print(f"KMeans failed at epoch {epoch}: {e}")
+        return 0, 0, 0

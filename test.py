@@ -2,7 +2,7 @@ import torch
 from network import Network
 from metric import valid
 import argparse
-from dataloader import load_data
+from dataloader_har import load_data
 
 # MNIST-USPS
 # BDGP
