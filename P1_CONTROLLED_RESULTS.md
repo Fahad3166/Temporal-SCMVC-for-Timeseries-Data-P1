@@ -47,7 +47,7 @@ The repeated-seed results support a more cautious conclusion than the original P
 - PAMAP2 is mixed: TCN-SCMVC has the best ACC, but the flattened original SCMVC baseline has better NMI, ARI, and PUR.
 - Temporal encoders do improve SCMVC on several datasets, but the best temporal encoder is dataset-dependent.
 
-These results are still limited to three seeds and a maximum of 5000 stratified samples. For a publication-quality evaluation, the next steps should include saved preprocessing indices, subject-leakage checks, full data-audit tables, and stronger external baselines.
+These results are still limited to three seeds and a maximum of 5000 stratified samples. 
 
 ## Raw Result Files
 
