@@ -97,7 +97,7 @@ The controlled comparison used:
 - Same training epochs and clustering evaluation
 - K-means `n_init=10`
 
-Full details are in [P2_CONTROLLED_RESULTS.md](P2_CONTROLLED_RESULTS.md).
+Full details are in [P2_CONTROLLED_RESULTS.md](P1_CONTROLLED_RESULTS.md).
 
 Summary:
 
